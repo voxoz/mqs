@@ -61,7 +61,7 @@ handle_call({open, Options, DefaultConsumer}, _From, #state{connection = Connect
              {reply, Reply, S} end;
 handle_call({publish, Exchange, RoutingKey, Payload, Options}, _From, #state{channel = Channel} = State) ->
     case make_connection(State) of
-        #state{connection=undefined} -> {stop, cant_establish_mq_connection, State}; 
+        #state{connection=undefined} -> {reply, {error, cant_establish_mq_connection}, State}; 
         S -> {reply, mqs_channel:publish(Channel, Exchange, RoutingKey, Payload, Options), S} end.
 
 handle_cast(_Info, State) -> {noreply, State}.
