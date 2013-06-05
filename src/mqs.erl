@@ -15,7 +15,7 @@
 
 -define(STATIC_EXCHANGES, [?USER_EVENTS_EX, ?DB_EX, ?NOTIFICATIONS_EX]).
 
-key(List) -> key_to_list(List).
+key(List) -> mqs_lib:key_to_list(List).
 
 open(Options) when is_list(Options) -> gen_server:call(?MODULE, {open, Options, self()}).
 publish(Exchange, RoutingKey, Payload) -> publish(Exchange, RoutingKey, Payload, []).
