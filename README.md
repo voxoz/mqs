@@ -13,6 +13,6 @@ Credits
 -------
 
 * Maxim Sokhatsky
-* Vlad Baranov
+* Vladimir Baranov
 
 OM A HUM
