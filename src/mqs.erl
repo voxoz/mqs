@@ -15,7 +15,7 @@
 
 -define(STATIC_EXCHANGES, [?USER_EVENTS_EX, ?DB_EX, ?NOTIFICATIONS_EX]).
 
-key(List) -> mqs_lib:key_to_list(List).
+%key(List) -> mqs_lib:key_to_list(List).
 
 open(Options) when is_list(Options) -> gen_server:call(?MODULE, {open, Options, self()}).
 publish(Exchange, RoutingKey, Payload) -> publish(Exchange, RoutingKey, Payload, []).
@@ -31,7 +31,7 @@ make_connection(State = #state{}) ->
             erlang:monitor(process, Connection),
             erlang:monitor(process, Ch),
             #state{connection = Connection, channel = Ch};
-        {error, Reason} -> State end.
+        {error, _Reason} -> State end.
 
 init([]) ->
     process_flag(trap_exit, true),
@@ -54,12 +54,12 @@ init([]) ->
     {ok,#state{node = NodeName, connection_options = ConnectionOptions}}.
 
 handle_call(node_name, _From,  #state{node = Node} = State) -> {reply, {ok, Node}, State};
-handle_call({open, Options, DefaultConsumer}, _From, #state{connection = Connection} = State) ->
+handle_call({open, Options, DefaultConsumer}, _From, State) ->
     case make_connection(State) of
         #state{connection=undefined} -> {reply, {error, cant_establish_mq_connection}, State};
         S -> Consumer = mqs_lib:opt(consumer, Options, DefaultConsumer),
              Options1 = mqs_lib:override_opt(consumer, Consumer, Options),
-             Reply = mqs_channel_sup:start_channel(Connection,  Options1),
+             Reply = mqs_channel_sup:start_channel(S#state.connection,  Options1),
              {reply, Reply, S} end;
 handle_call({publish, Exchange, RoutingKey, Payload, Options}, _From, #state{channel = Channel} = State) ->
     case make_connection(State) of
@@ -85,7 +85,7 @@ terminate(_Reason, #state{connection = Connection}) -> catch amqp_connection:clo
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-init_static_entries(Ch, Node) ->
+init_static_entries(Ch, _Node) ->
     ExOptions = [durable, {auto_delete, false}],
     [ mqs_channel:create_exchange(Ch, Ex, ExOptions) || Ex <- ?STATIC_EXCHANGES].
 
