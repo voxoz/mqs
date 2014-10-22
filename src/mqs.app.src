@@ -1,6 +1,6 @@
 {application, mqs,
  [
-  {description, "Client wrapper for RabbitMQ client"},
+  {description, "Message Queue Service"},
   {vsn, "1"},
   {registered, []},
   {applications, [
