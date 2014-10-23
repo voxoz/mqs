@@ -2,7 +2,7 @@
 -author('Max Davidenko').
 -behaviour(gen_server).
 -compile([{parse_transform, lager_transform}]).
--include("mqs.hrl").
+-include_lib("mqs/include/mqs.hrl").
 
 -export([start/1, start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -103,10 +103,14 @@ handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
          accepting ->
             Payload = Message#amqp_msg.payload,
             HandlerSpec = State#state.args,
-            InvokeResult = invoke(
+            InvokeResult = try
+              invoke(
                 HandlerSpec#rabbitmq_msg_handler_spec.message_processing_mod,
                 HandlerSpec#rabbitmq_msg_handler_spec.message_processing_fun,
-                {Payload, HandlerSpec#rabbitmq_msg_handler_spec.message_processing_args}),
+                {Payload, HandlerSpec#rabbitmq_msg_handler_spec.message_processing_args})
+              catch
+                _:_ -> {error, msg_callback_failed}
+              end,
             case InvokeResult of
                   {ok, _} -> amqp_channel:cast(State#state.channel, #'basic.ack'{delivery_tag = Tag});
                   {error, Reason} ->
