@@ -71,12 +71,19 @@ initMsgHandler(Args) ->
                         RouteCreated = ok end
   end,
 
-    % 4. Subscribe to queue
+    % 4. Subscribe to queue (if needed)
+    HandlerType = Args#rabbitmq_msg_handler_spec.handler_type,
     if RouteCreated == ok ->
-        QueueSubscription = #'basic.consume'{queue = Queue},
-        #'basic.consume_ok'{consumer_tag = _Tag} = 
-           amqp_channel:call(BrokerChannel, QueueSubscription), %% caller process is a consumer
-        {ok, State};
+      case HandlerType of
+        duplex ->
+          QueueSubscription = #'basic.consume'{queue = Queue},
+          #'basic.consume_ok'{consumer_tag = _Tag} =
+            amqp_channel:call(BrokerChannel, QueueSubscription), %% caller process is a consumer
+          {ok, State};
+        _ ->
+          % Do not register as consumer, handler just for sending messages
+          {ok, State}
+      end;
     true -> RouteCreated end.
 
 handle_call({send_message, Message}, _From, State) ->

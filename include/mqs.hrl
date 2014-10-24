@@ -22,6 +22,7 @@
 %%--------------------------------------------------------------------
 -record(rabbitmq_msg_handler_spec,
         {
+          handler_type = duplex,
           exchange_name = <<"">>,
           exchange_type = <<"direct">>,
           routing_key = <<"">>,
