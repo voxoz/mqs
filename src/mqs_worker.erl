@@ -12,7 +12,8 @@
     connection::pid(), % rabbitMQ connection
     channel:: pid(),   % rabbitMQ channel
     args = null,       % Start args (for restarting after broken channel or connection)
-    consumer_tag = null }).
+    consumer_tag = null,
+    consume_state = active }).
 
 start_link(Args) -> gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
 start(Args) -> gen_server:start(?MODULE, Args, []).
@@ -104,13 +105,22 @@ handle_call(_Request, _From, State) -> {reply, ok, State}.
 handle_cast(_Msg, State) -> {noreply, State}.
 handle_info(accepting, State) ->
   amqp_channel:cast(State#state.channel, #'basic.consume'{consumer_tag = State#state.consumer_tag }),
-  {noreply, State};
+  NewState = State#state{ consume_state = active },
+  {noreply, NewState};
 handle_info(rejecting, State) ->
-  amqp_channel:cast(State#state.channel, #'basic.cancel'{consumer_tag = State#state.consumer_tag }),
-  {noreply, State};
+  NewState = State#state{ consume_state = suspended },
+  %amqp_channel:cast(State#state.channel, #'basic.cancel'{consumer_tag = State#state.consumer_tag, nowait = false }),
+  {noreply, NewState};
 handle_info(#'basic.consume_ok'{}, State) -> {noreply, State};
 handle_info(#'basic.cancel_ok'{}, State) -> {noreply, State};
 handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
+  case State#state.consume_state of
+    suspended ->
+      amqp_channel:cast(State#state.channel, #'basic.reject'{delivery_tag = Tag, requeue = true}),
+      amqp_channel:cast(State#state.channel, #'basic.cancel'{consumer_tag = State#state.consumer_tag, nowait = false });
+    _ ->
+      ok
+  end,
   Payload = Message#amqp_msg.payload,
   HandlerSpec = State#state.args,
   InvokeResult = try
