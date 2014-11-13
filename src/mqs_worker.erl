@@ -104,23 +104,27 @@ handle_call(stop, _From, State) ->
 handle_call(_Request, _From, State) -> {reply, ok, State}.
 handle_cast(_Msg, State) -> {noreply, State}.
 handle_info(accepting, State) ->
-  amqp_channel:cast(State#state.channel, #'basic.consume'{consumer_tag = State#state.consumer_tag }),
-  NewState = State#state{ consume_state = active },
+  NewState = case State#state.consume_state of
+    suspended ->
+      lager:info("Consumer resumed"),
+      #'basic.consume_ok'{consumer_tag = Tag} = amqp_channel:call(State#state.channel, #'basic.consume'{consumer_tag = State#state.consumer_tag }),
+      State#state{ consume_state = active, consumer_tag = Tag };
+    _ ->
+      State
+  end,
   {noreply, NewState};
 handle_info(rejecting, State) ->
-  NewState = State#state{ consume_state = suspended },
-  %amqp_channel:cast(State#state.channel, #'basic.cancel'{consumer_tag = State#state.consumer_tag, nowait = false }),
+  NewState = case State#state.consume_state of
+    active ->
+      lager:info("Suspend request received"),
+      State#state{ consume_state = suspended };
+    _ ->
+      State
+  end,
   {noreply, NewState};
 handle_info(#'basic.consume_ok'{}, State) -> {noreply, State};
-handle_info(#'basic.cancel_ok'{}, State) -> {noreply, State};
+handle_info(#'basic.cancel_ok'{}, State) ->  {noreply, State};
 handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
-  case State#state.consume_state of
-    suspended ->
-      amqp_channel:cast(State#state.channel, #'basic.reject'{delivery_tag = Tag, requeue = true}),
-      amqp_channel:cast(State#state.channel, #'basic.cancel'{consumer_tag = State#state.consumer_tag, nowait = false });
-    _ ->
-      ok
-  end,
   Payload = Message#amqp_msg.payload,
   HandlerSpec = State#state.args,
   InvokeResult = try
@@ -139,6 +143,13 @@ handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
     _ ->
       lager:warning("Unknown message processing result"),
       amqp_channel:cast(State#state.channel, #'basic.reject'{delivery_tag = Tag, requeue = true})
+  end,
+  case State#state.consume_state of
+    suspended ->
+      #'basic.cancel_ok'{} = amqp_channel:call(State#state.channel, #'basic.cancel'{consumer_tag = State#state.consumer_tag, nowait = false }),
+      lager:info("Suspend request performed");
+    _ ->
+      ok
   end,
   {noreply, State};
 
@@ -160,8 +171,8 @@ terminate(Reason, State) ->
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 cleanUpBeforeDie(State) ->
-    if is_pid(State#state.channel) -> amqp_channel:close(State#state.channel) end,
-    if is_pid(State#state.connection) -> amqp_connection:close(State#state.connection) end,
+    if is_pid(State#state.channel) -> amqp_channel:close(State#state.channel); true -> ok end,
+    if is_pid(State#state.connection) -> amqp_connection:close(State#state.connection); true -> ok end,
     {ok, "Messages handler successfuly cleaned resources and ready to shutdown"}.
 
 invoke([], [])             -> nothing_to_invoke;
