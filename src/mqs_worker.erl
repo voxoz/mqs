@@ -12,7 +12,7 @@
     connection::pid(), % rabbitMQ connection
     channel:: pid(),   % rabbitMQ channel
     args = null,       % Start args (for restarting after broken channel or connection)
-    processing_state = null }).
+    consumer_tag = null }).
 
 start_link(Args) -> gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
 start(Args) -> gen_server:start(?MODULE, Args, []).
@@ -29,7 +29,7 @@ initMsgHandler(Args) ->
     % 2. Create channel
     {ok, BrokerChannel} = amqp_connection:open_channel(BrokerConnection),
     amqp_channel:call(BrokerChannel, #'basic.qos'{prefetch_count = Args#rabbitmq_msg_handler_spec.prefetch_count}),
-    State = #state{connection = BrokerConnection, channel = BrokerChannel, args = Args, processing_state = accepting},
+    State = #state{connection = BrokerConnection, channel = BrokerChannel, args = Args},
 
     % 3. Set up messages routing
     case Args#rabbitmq_msg_handler_spec.exchange_name of
@@ -77,9 +77,10 @@ initMsgHandler(Args) ->
       case HandlerType of
         duplex ->
           QueueSubscription = #'basic.consume'{queue = Queue},
-          #'basic.consume_ok'{consumer_tag = _Tag} =
+          #'basic.consume_ok'{consumer_tag = Tag} =
             amqp_channel:call(BrokerChannel, QueueSubscription), %% caller process is a consumer
-          {ok, State};
+          NewState = State#state{consumer_tag = Tag},
+          {ok, NewState};
         _ ->
           % Do not register as consumer, handler just for sending messages
           {ok, State}
@@ -101,36 +102,35 @@ handle_call(stop, _From, State) ->
 
 handle_call(_Request, _From, State) -> {reply, ok, State}.
 handle_cast(_Msg, State) -> {noreply, State}.
-handle_info(accepting, State) -> {noreply, State#state{ processing_state = accepting }};
-handle_info(rejecting, State) -> {noreply, State#state{ processing_state = rejecting }};
+handle_info(accepting, State) ->
+  amqp_channel:cast(State#state.channel, #'basic.consume'{consumer_tag = State#state.consumer_tag }),
+  {noreply, State};
+handle_info(rejecting, State) ->
+  amqp_channel:cast(State#state.channel, #'basic.cancel'{consumer_tag = State#state.consumer_tag }),
+  {noreply, State};
 handle_info(#'basic.consume_ok'{}, State) -> {noreply, State};
 handle_info(#'basic.cancel_ok'{}, State) -> {noreply, State};
 handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
-    case State#state.processing_state of
-         accepting ->
-            Payload = Message#amqp_msg.payload,
-            HandlerSpec = State#state.args,
-            InvokeResult = try
-              invoke(
-                HandlerSpec#rabbitmq_msg_handler_spec.message_processing_mod,
-                HandlerSpec#rabbitmq_msg_handler_spec.message_processing_fun,
-                {Payload, HandlerSpec#rabbitmq_msg_handler_spec.message_processing_args})
-              catch
-                _:_ -> {error, msg_callback_failed}
-              end,
-            case InvokeResult of
-                  {ok, _} -> amqp_channel:cast(State#state.channel, #'basic.ack'{delivery_tag = Tag});
-                  {error, Reason} ->
-                      lager:error("Error while processing received message. Reason: ~p", [Reason]),
-                      amqp_channel:cast(State#state.channel, #'basic.reject'{delivery_tag = Tag, requeue = true});
-                  _ ->
-                      lager:warning("Unknown message processing result"),
-                      amqp_channel:cast(State#state.channel, #'basic.reject'{delivery_tag = Tag, requeue = true})
-            end;
-        rejecting ->
-            amqp_channel:cast(State#state.channel, #'basic.reject'{delivery_tag = Tag, requeue = true})
-    end,
-    {noreply, State};
+  Payload = Message#amqp_msg.payload,
+  HandlerSpec = State#state.args,
+  InvokeResult = try
+    invoke(
+      HandlerSpec#rabbitmq_msg_handler_spec.message_processing_mod,
+      HandlerSpec#rabbitmq_msg_handler_spec.message_processing_fun,
+      {Payload, HandlerSpec#rabbitmq_msg_handler_spec.message_processing_args})
+                 catch
+                   _:_ -> {error, msg_callback_failed}
+                 end,
+  case InvokeResult of
+    {ok, _} -> amqp_channel:cast(State#state.channel, #'basic.ack'{delivery_tag = Tag});
+    {error, Reason} ->
+      lager:error("Error while processing received message. Reason: ~p", [Reason]),
+      amqp_channel:cast(State#state.channel, #'basic.reject'{delivery_tag = Tag, requeue = true});
+    _ ->
+      lager:warning("Unknown message processing result"),
+      amqp_channel:cast(State#state.channel, #'basic.reject'{delivery_tag = Tag, requeue = true})
+  end,
+  {noreply, State};
 
 handle_info({'EXIT', From, Reason}, State) ->
     unlink(From),
