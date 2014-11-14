@@ -80,6 +80,7 @@ initMsgHandler(Args) ->
           QueueSubscription = #'basic.consume'{queue = Queue},
           #'basic.consume_ok'{consumer_tag = Tag} =
             amqp_channel:call(BrokerChannel, QueueSubscription), %% caller process is a consumer
+          amqp_selective_consumer:register_default_consumer(BrokerChannel, self()),
           NewState = State#state{consumer_tag = Tag},
           {ok, NewState};
         _ ->
