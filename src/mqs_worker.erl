@@ -34,15 +34,12 @@ initMsgHandler(Args) ->
 
     % 3. Set up messages routing
     case Args#rabbitmq_msg_handler_spec.exchange_name of
-        <<"">> -> 
-
-            Queue = Args#rabbitmq_msg_handler_spec.routing_key,
-
-                if Queue == <<"">> -> 
+        <<"">> ->
+                if Args#rabbitmq_msg_handler_spec.routing_key == <<"">> ->
                         RouteCreated = {stop, "No exchange and queue name specified"};
                     true ->
                         QueueSpec = #'queue.declare'{
-                            queue = Queue, 
+                            queue = Args#rabbitmq_msg_handler_spec.routing_key,
                             durable = Args#rabbitmq_msg_handler_spec.durable },
 
                         #'queue.declare_ok'{} = amqp_channel:call(BrokerChannel, QueueSpec),
@@ -51,7 +48,6 @@ initMsgHandler(Args) ->
 
          _ ->
                 if Args#rabbitmq_msg_handler_spec.routing_key == <<"">> ->
-                        Queue = <<"">>,
                         RouteCreated = {stop, "No routing key for exchange specified"};
                     true ->
                         ExchangeSpec = #'exchange.declare' {
@@ -60,10 +56,13 @@ initMsgHandler(Args) ->
                             durable = Args#rabbitmq_msg_handler_spec.durable },
 
                         #'exchange.declare_ok'{} = amqp_channel:call(BrokerChannel, ExchangeSpec),
-                        #'queue.declare_ok'{queue = Queue} = amqp_channel:call(BrokerChannel, #'queue.declare'{}),
+                        QueueSpec = #'queue.declare'{
+                          queue = Args#rabbitmq_msg_handler_spec.routing_key,
+                          durable = Args#rabbitmq_msg_handler_spec.durable },
+                        #'queue.declare_ok'{} = amqp_channel:call(BrokerChannel, QueueSpec),
 
                         Binding = #'queue.bind'{
-                            queue = Queue, 
+                            queue = Args#rabbitmq_msg_handler_spec.routing_key,
                             exchange = Args#rabbitmq_msg_handler_spec.exchange_name,
                             routing_key = Args#rabbitmq_msg_handler_spec.routing_key },
 
@@ -77,7 +76,7 @@ initMsgHandler(Args) ->
     if RouteCreated == ok ->
       case HandlerType of
         duplex ->
-          QueueSubscription = #'basic.consume'{queue = Queue},
+          QueueSubscription = #'basic.consume'{queue = Args#rabbitmq_msg_handler_spec.routing_key},
           #'basic.consume_ok'{consumer_tag = Tag} =
             amqp_channel:call(BrokerChannel, QueueSubscription), %% caller process is a consumer
           amqp_selective_consumer:register_default_consumer(BrokerChannel, self()),
