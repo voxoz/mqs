@@ -88,7 +88,7 @@ initMsgHandler(Args) ->
       end;
     true -> RouteCreated end.
 
-handle_call({send_message, Message}, _From, State) ->
+handle_call({pub, Message}, _From, State) ->
     Channel = State#state.channel,
     MsgPublish = #'basic.publish'{
         exchange = State#state.args#rabbitmq_msg_handler_spec.exchange_name,
@@ -155,7 +155,7 @@ handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
 
 handle_info({'EXIT', From, Reason}, State) ->
     unlink(From),
-    if Reason /= normal -> mqs_manager:handlerTerminated(self());
+    if Reason /= normal -> mqs:terminated(self());
        true -> ok end,
     {noreply, State};
 

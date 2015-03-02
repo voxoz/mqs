@@ -9,17 +9,9 @@
 -record(state, { messages_handlers = null, handlers_pids = null}).
 
 init([]) -> {ok, #state{ messages_handlers = dict:new(), handlers_pids = dict:new() }}.
-
-subscribe(Name, Args)  -> gen_server:call(?SERVER, {start_handler, Name, Args}, infinity).
-publish(Name, Message) -> gen_server:call(?SERVER, {send_message, Name, Message}, infinity).
-close(Name)            -> gen_server:call(?SERVER, {stop, Name}, infinity).
-suspend(Name)          -> gen_server:call(?SERVER, {suspend, Name}, infinity).
-resume(Name)           -> gen_server:call(?SERVER, {resume, Name}, infinity).
-stop()                 -> gen_server:call(?SERVER, stop, infinity).
-handlerTerminated(Pid) -> gen_server:cast(?SERVER, {terminated, Pid}).
 start_link()           -> gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-handle_call({start_handler, Name, Args}, _From, State) ->
+handle_call({sub, Name, Args}, _From, State) ->
     StartResult = mqs_worker:start(Args),
     {Reply,NewState} = case StartResult of
         {ok, Pid} ->
@@ -35,18 +27,18 @@ handle_call({start_handler, Name, Args}, _From, State) ->
     end,
     {reply, Reply, NewState};
 
-handle_call({send_message, Name, Message}, _From, State) ->
+handle_call({pub, Name, Message}, _From, State) ->
     HandlerPid = dict:find(Name, State#state.messages_handlers),
     Reply = case HandlerPid of
         error ->
             lager:error("Unable to send message. Handler with specified name not found. Name - ~p", [Name]),
             {error, cant_send_message};
         {ok, {Pid, _}} ->
-            gen_server:call(Pid, {send_message, term_to_binary(Message)})
+            gen_server:call(Pid, {pub, term_to_binary(Message)})
     end,
     {reply, Reply, State};
 
-handle_call({stop, Name}, _From, State) ->
+handle_call({unsub, Name}, _From, State) ->
     HandlerPid = dict:find(Name, State#state.messages_handlers),
     {Reply,NewState} = case HandlerPid of
          error ->
