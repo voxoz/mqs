@@ -1,6 +1,5 @@
 -module(mqs_manager).
 -author('Max Davidenko').
--compile([{parse_transform, lager_transform}]).
 -behaviour(gen_server).
 -export([start_link/0, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -define(SERVER, ?MODULE).
@@ -15,13 +14,13 @@ handle_call({sub, Name, Args}, _From, State) ->
     StartResult = mqs_worker:start(Args),
     {Reply,NewState} = case StartResult of
         {ok, Pid} ->
-            lager:info("Messages handler instance successfuly started: ~p", [Name]),
+            mqs:info(?MODULE,"Messages handler instance successfuly started: ~p", [Name]),
             { {ok, consumer_started},
               State#state { 
                   messages_handlers = dict:store(Name, {Pid, Args}, State#state.messages_handlers),
                   handlers_pids = dict:store(Pid, Name, State#state.handlers_pids) } };
         _ ->
-            lager:error("Error while starting message handler instance: Name - ~p", [Name]),
+            mqs:error(?MODULE,"Error while starting message handler instance: Name - ~p", [Name]),
             { {error, cant_start_consumer},
               State }
     end,
@@ -31,7 +30,7 @@ handle_call({pub, Name, Message}, _From, State) ->
     HandlerPid = dict:find(Name, State#state.messages_handlers),
     Reply = case HandlerPid of
         error ->
-            lager:error("Unable to send message. Handler with specified name not found. Name - ~p", [Name]),
+            mqs:error(?MODULE,"Unable to send message. Handler with specified name not found. Name - ~p", [Name]),
             {error, cant_send_message};
         {ok, {Pid, _}} ->
             gen_server:call(Pid, {pub, term_to_binary(Message)})
@@ -42,7 +41,7 @@ handle_call({unsub, Name}, _From, State) ->
     HandlerPid = dict:find(Name, State#state.messages_handlers),
     {Reply,NewState} = case HandlerPid of
          error ->
-             lager:error("Unable to stop messages handler. Specified handler not found. Name - ~p", [Name]),
+             mqs:error(?MODULE,"Unable to stop messages handler. Specified handler not found. Name - ~p", [Name]),
              { {error, consumer_not_found}, State };
          {ok, {Pid, _}} ->
              { gen_server:call(Pid, stop),
@@ -55,7 +54,7 @@ handle_call({suspend, Name}, _From, State) ->
     HandlerPid = dict:find(Name, State#state.messages_handlers),
     Reply = case HandlerPid of
         error ->
-            lager:error("Unable to suspend messages handler. Specified handler not found. Name - ~p", [Name]),
+            mqs:error(?MODULE,"Unable to suspend messages handler. Specified handler not found. Name - ~p", [Name]),
             {error, consumer_not_found};
        {ok, {Pid, _}} ->
             Pid ! rejecting,
@@ -66,7 +65,7 @@ handle_call({resume, Name}, _From, State) ->
     HandlerPid = dict:find(Name, State#state.messages_handlers),
     Reply = case HandlerPid of
         error ->
-            lager:error("Unable to resume messages handler. Specified handler not found. Name - ~p", [Name]),
+            mqs:error(?MODULE,"Unable to resume messages handler. Specified handler not found. Name - ~p", [Name]),
             {error, consumer_not_found};
         {ok, {Pid, _}} ->
             Pid ! accepting,
@@ -85,7 +84,7 @@ handle_cast({terminated, Pid}, State) ->
   PidsLeft = dict:size(NewHandlersPids),
   if
     PidsLeft == 0 ->
-      lager:error("All messages handlers abnormally terminated, trying to restart"),
+      mqs:error(?MODULE,"All messages handlers abnormally terminated, trying to restart"),
       Handlers = dict:fetch_keys(State#state.messages_handlers),
       Restarted = restartHandlers(Handlers, State#state.messages_handlers, dict:new(), dict:new()),
       case Restarted of
@@ -96,7 +95,7 @@ handle_cast({terminated, Pid}, State) ->
           Reply = {stop, Restarted, State}
       end;
     true ->
-      lager:error("Messages handler [~p] was abnormally terminated", [Pid]),
+      mqs:error(?MODULE,"Messages handler [~p] was abnormally terminated", [Pid]),
       NewState = State#state{handlers_pids = NewHandlersPids},
       Reply = {noreply, NewState}
   end,
@@ -128,7 +127,7 @@ restartHandlers([Handler | Handlers], HandlersInfo, NewHandlers, NewHandlersPids
   HandlerInfo = dict:find(Handler, HandlersInfo),
   case HandlerInfo of
     error ->
-      lager:error("Unable to find handler [~p] specs for restarting", [Handler]),
+      mqs:error(?MODULE,"Unable to find handler [~p] specs for restarting", [Handler]),
       restartHandlers(Handlers, HandlersInfo, NewHandlers, NewHandlersPids);
     {ok, {_Pid, Args}} ->
       StartResult = mqs_worker:start(Args),
@@ -136,11 +135,11 @@ restartHandlers([Handler | Handlers], HandlersInfo, NewHandlers, NewHandlersPids
         {ok, NewPid} ->
           RestartedHandlers = dict:store(Handler, {NewPid, Args}, NewHandlers),
           RestartedPids = dict:store(NewPid, Handler, NewHandlersPids),
-          lager:info("Messages handler instance successfuly restarted: ~p", [Handler]),
+          mqs:info(?MODULE,"Messages handler instance successfuly restarted: ~p", [Handler]),
           NewHandlersInfo = dict:erase(Handler, HandlersInfo),
           restartHandlers(Handlers, NewHandlersInfo, RestartedHandlers, RestartedPids);
         _ ->
-          lager:error("Error while restarting message handler instance: Name - ~p", [Handler]),
+          mqs:error(?MODULE,"Error while restarting message handler instance: Name - ~p", [Handler]),
           {error, failed_to_restart_handlers} end
   end.
 
