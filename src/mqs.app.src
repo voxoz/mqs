@@ -5,7 +5,9 @@
   {registered, []},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+                  rabbit_common,
+                  amqp_client
                  ]},
   {mod, { mqs, []}},
   {env, []}
