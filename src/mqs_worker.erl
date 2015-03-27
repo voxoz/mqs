@@ -89,7 +89,9 @@ handle_info(rejecting, State) ->
 handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
     Payload = Message#amqp_msg.payload,
     Spec = State#state.args,
-    InvokeResult = try invoke(Spec#mqs.'mod',Spec#mqs.'fun',{Payload,Spec#mqs.arg})
+    Mod = Spec#mqs.'mod',
+    Fun = Spec#mqs.'fun',
+    InvokeResult = try Mod:Fun({Payload,Spec#mqs.arg})
                  catch  _:_ -> {error, msg_callback_failed} end,
     case InvokeResult of
          {ok, _} -> amqp_channel:cast(State#state.channel,#'basic.ack'{delivery_tag=Tag});
@@ -126,17 +128,3 @@ cleanUpBeforeDie(State) ->
     if is_pid(State#state.channel) -> amqp_channel:close(State#state.channel); true -> ok end,
     if is_pid(State#state.connection) -> amqp_connection:close(State#state.connection); true -> ok end,
     {ok, "Messages handler successfuly cleaned resources and ready to shutdown"}.
-
-invoke([], [])             -> nothing_to_invoke;
-invoke([], Func)           -> FunName = list_to_atom(Func), ?MODULE:FunName();
-invoke(Module, Func)       -> FunName = list_to_atom(Func),
-                              ModuleName = list_to_atom(Module),
-                              ModuleName:FunName().
-
-invoke([], [], _Args)      -> nothing_to_invoke;
-invoke([], Func, [])       -> invoke([], Func);
-invoke(Module, Func, [])   -> invoke(Module, Func);
-invoke([], Func, Args)     -> FunName = list_to_atom(Func), ?MODULE:FunName(Args);
-invoke(Module, Func, Args) -> FunName = list_to_atom(Func),
-                              ModuleName = list_to_atom(Module),
-                              ModuleName:FunName(Args).
