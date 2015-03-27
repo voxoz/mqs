@@ -89,7 +89,7 @@ handle_info(rejecting, State) ->
 handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
     Payload = Message#amqp_msg.payload,
     Spec = State#state.args,
-    InvokeResult = try invoke(Spec#mqs.mod,Spec#mqs.'fun',{Payload,Spec#mqs.arg})
+    InvokeResult = try invoke(Spec#mqs.'mod',Spec#mqs.'fun',{Payload,Spec#mqs.arg})
                  catch  _:_ -> {error, msg_callback_failed} end,
     case InvokeResult of
          {ok, _} -> amqp_channel:cast(State#state.channel,#'basic.ack'{delivery_tag=Tag});
