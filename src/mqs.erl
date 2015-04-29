@@ -18,14 +18,15 @@ stop(_State) ->
                                 true -> ok end,
     ok.
 
-subscribe(Name, Args)  -> gen_server:call(?SERVER, {sub, Name, Args}, infinity).
-publish(Name, Message) -> gen_server:call(?SERVER, {pub, Name, Message}, infinity).
-close(Name)            -> gen_server:call(?SERVER, {unsub, Name}, infinity).
-suspend(Name)          -> gen_server:call(?SERVER, {suspend, Name}, infinity).
-resume(Name)           -> gen_server:call(?SERVER, {resume, Name}, infinity).
+subscribe(Name, Args)         -> gen_server:call(?SERVER, {sub, Name, Args}, infinity).
+publish(Name, Message)        -> gen_server:call(?SERVER, {pub, Name, Message}, infinity).
+publish(Name, Message, Props) -> gen_server:call(?SERVER, {pub, Name, Message, Props}, infinity).
+close(Name)                   -> gen_server:call(?SERVER, {unsub, Name}, infinity).
+suspend(Name)                 -> gen_server:call(?SERVER, {suspend, Name}, infinity).
+resume(Name)                  -> gen_server:call(?SERVER, {resume, Name}, infinity).
 
-shutdown()             -> gen_server:call(?SERVER, stop, infinity).
-terminated(Pid)        -> gen_server:cast(?SERVER, {terminated, Pid}).
+shutdown()                    -> gen_server:call(?SERVER, stop, infinity).
+terminated(Pid)               -> gen_server:cast(?SERVER, {terminated, Pid}).
 
 log_modules() -> [mqs_worker,mqs,mqs_manager].
 -define(ALLOWED, (application:get_env(mqs,log_modules,mqs))).

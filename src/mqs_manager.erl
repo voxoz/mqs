@@ -1,6 +1,7 @@
 -module(mqs_manager).
 -author('Max Davidenko').
 -behaviour(gen_server).
+-include("mqs.hrl").
 -export([start_link/0, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -define(SERVER, ?MODULE).
 -compile(export_all).
@@ -27,13 +28,16 @@ handle_call({sub, Name, Args}, _From, State) ->
     {reply, Reply, NewState};
 
 handle_call({pub, Name, Message}, _From, State) ->
+  handle_call({pub, Name, Message, #'P_basic'{}}, _From, State);
+
+handle_call({pub, Name, Message, Props = #'P_basic'{}}, _From, State) ->
     HandlerPid = dict:find(Name, State#state.messages_handlers),
     Reply = case HandlerPid of
         error ->
             mqs:error(?MODULE,"Unable to send message. Handler with specified name not found. Name - ~p", [Name]),
             {error, cant_send_message};
         {ok, {Pid, _}} ->
-            gen_server:call(Pid, {pub, term_to_binary(Message)})
+            gen_server:call(Pid, {pub, term_to_binary(Message), Props})
     end,
     {reply, Reply, State};
 

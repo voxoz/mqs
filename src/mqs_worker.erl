@@ -53,10 +53,10 @@ init(Args) ->
                _ -> {ok, State} end;
           _ -> RouteCreated end.
 
-handle_call({pub, Message}, _From, State) ->
+handle_call({pub, Message, Props = #'P_basic'{}}, _From, State) ->
     Channel = State#state.channel,
     MsgPublish = #'basic.publish'{exchange=State#state.args#mqs.name,routing_key=State#state.args#mqs.key},
-    amqp_channel:cast(Channel, MsgPublish, #amqp_msg{payload = Message}),
+    amqp_channel:cast(Channel, MsgPublish, #amqp_msg{payload = Message, props = Props}),
     Reply = {ok, "Message successfuly sent"},
     {reply, Reply, State};
 
@@ -88,10 +88,11 @@ handle_info(rejecting, State) ->
 
 handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
     Payload = Message#amqp_msg.payload,
+    Props = Message#amqp_msg.props,
     Spec = State#state.args,
     Mod = Spec#mqs.'mod',
     Fun = Spec#mqs.'fun',
-    InvokeResult = try Mod:Fun({Payload,Spec#mqs.arg})
+    InvokeResult = try Mod:Fun({Payload,Spec#mqs.arg,Props})
                  catch  _:_ -> {error, msg_callback_failed} end,
     case InvokeResult of
          {ok, _} -> amqp_channel:cast(State#state.channel,#'basic.ack'{delivery_tag=Tag});
