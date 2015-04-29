@@ -11,4 +11,5 @@
         broker = #amqp_params_network{},
         'mod' = [],
         'fun' = [],
-        'arg' = null}).
+        'arg' = null,
+        'pid' = null}).
