@@ -93,11 +93,11 @@ handle_info({#'basic.deliver'{delivery_tag = Tag}, Message}, State) ->
     Mod = Spec#mqs.'mod',
     Fun = Spec#mqs.'fun',
     InvokeResult = try Mod:Fun({Payload,Spec#mqs.arg,Props})
-                 catch  _:_ -> {error, msg_callback_failed, erlang:get_stacktrace()} end,
+                 catch  C:T -> {error, msg_callback_failed, {C,T,erlang:get_stacktrace()}} end,
     case InvokeResult of
          {ok, _} -> amqp_channel:cast(State#state.channel,#'basic.ack'{delivery_tag=Tag});
-         {error, Reason, Stacktrace} ->
-                mqs:error(?MODULE,"Error while processing received message. Reason: ~p~nStacktrace: ~p", [Reason, Stacktrace]),
+         {error, Reason, Info} ->
+                mqs:error(?MODULE,"Error while processing received message. Reason: ~p~nDetails: ~p~n", [Reason, Info]),
                 amqp_channel:cast(State#state.channel,#'basic.reject'{delivery_tag=Tag,requeue=true});
          Res -> mqs:warning(?MODULE,"Unknown message processing result ~p~n",[Res]),
                 amqp_channel:cast(State#state.channel,#'basic.reject'{delivery_tag=Tag,requeue=true}) end,
